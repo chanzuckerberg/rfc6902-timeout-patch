@@ -1,3 +1,5 @@
+import * as moment from 'moment' // czi: use moment to implement timeout
+
 import {Pointer} from './pointer'
 
 import {apply} from './patch'
@@ -5,6 +7,8 @@ import {Operation, TestOperation, isDestructive, Diff, VoidableDiff, diffAny} fr
 
 export {Operation, TestOperation}
 export type Patch = Operation[]
+
+type Moment = moment.Moment
 
 /**
 Apply a 'application/json-patch+json'-type patch to an object.
@@ -27,10 +31,10 @@ export function applyPatch(object: any, patch: Operation[]) {
 }
 
 function wrapVoidableDiff(diff: VoidableDiff): Diff {
-  function wrappedDiff(input: any, output: any, ptr: Pointer): Operation[] {
-    const custom_patch = diff(input, output, ptr)
+  function wrappedDiff(input: any, output: any, ptr: Pointer, timeout: number, startTimestamp: Moment): Operation[] {
+    const custom_patch = diff(input, output, ptr, timeout, startTimestamp)
     // ensure an array is always returned
-    return Array.isArray(custom_patch) ? custom_patch : diffAny(input, output, ptr, wrappedDiff)
+    return Array.isArray(custom_patch) ? custom_patch : diffAny(input, output, ptr, timeout, startTimestamp, wrappedDiff)
   }
   return wrappedDiff
 }
@@ -48,10 +52,10 @@ to fall back to default behaviour.
 
 Returns list of operations to perform on `input` to produce `output`.
 */
-export function createPatch(input: any, output: any, diff?: VoidableDiff): Operation[] {
+export function createPatch(input: any, output: any, timeout: number = 0, diff?: VoidableDiff): Operation[] {
   const ptr = new Pointer()
   // a new Pointer gets a default path of [''] if not specified
-  return (diff ? wrapVoidableDiff(diff) : diffAny)(input, output, ptr)
+  return (diff ? wrapVoidableDiff(diff) : diffAny)(input, output, ptr, timeout, moment())
 }
 
 /**

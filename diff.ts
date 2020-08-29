@@ -1,5 +1,9 @@
+import * as moment from 'moment' // czi: use moment to implement timeout
+
 import {Pointer} from './pointer' // we only need this for type inference
 import {hasOwnProperty, objectType} from './util'
+
+type Moment = moment.Moment
 
 /**
 All diff* functions should return a list of operations, often empty.
@@ -42,13 +46,25 @@ export function isDestructive({op}: Operation): boolean {
   return op === 'remove' || op === 'replace' || op === 'copy' || op === 'move'
 }
 
-export type Diff = (input: any, output: any, ptr: Pointer) => Operation[]
+export type Diff = (input: any, output: any, ptr: Pointer, timeout: number, startTimestamp: Moment) => Operation[]
 /**
 VoidableDiff exists to allow the user to provide a partial diff(...) function,
 falling back to the built-in diffAny(...) function if the user-provided function
 returns void.
 */
-export type VoidableDiff = (input: any, output: any, ptr: Pointer) => Operation[] | void
+export type VoidableDiff = (input: any, output: any, ptr: Pointer, timeout: number, startTimestamp: Moment) => Operation[] | void
+
+// czi: if timed out throw error
+function isTimedOut(timeout: number, startTimestamp: Moment) {
+  if (
+    timeout &&
+    moment().diff(startTimestamp) >= timeout
+  ) {
+    throw new Error('Diff timed out!')
+  }
+
+  return false;
+}
 
 /**
 List the keys in `minuend` that are not in `subtrahend`.
@@ -170,7 +186,7 @@ resulting in an array of 'remove' operations.
 
 @returns A list of add/remove/replace operations.
 */
-export function diffArrays<T>(input: T[], output: T[], ptr: Pointer, diff: Diff = diffAny): Operation[] {
+export function diffArrays<T>(input: T[], output: T[], ptr: Pointer, diff: Diff = diffAny, timeout: number = 0, startTimestamp: Moment = moment()): Operation[] {
   // set up cost matrix (very simple initialization: just a map)
   const memo: {[index: string]: DynamicAlternative} = {
     '0,0': {operations: [], cost: 0},
@@ -191,7 +207,7 @@ export function diffArrays<T>(input: T[], output: T[], ptr: Pointer, diff: Diff 
     let memoized = memo[memo_key]
     if (memoized === undefined) {
       // TODO: this !diff(...).length usage could/should be lazy
-      if (i > 0 && j > 0 && !diff(input[i - 1], output[j - 1], new Pointer()).length) {
+      if (i > 0 && j > 0 && !diff(input[i - 1], output[j - 1], new Pointer(), timeout, startTimestamp).length) {
         // equal (no operations => no cost)
         memoized = dist(i - 1, j - 1)
       }
@@ -249,6 +265,7 @@ export function diffArrays<T>(input: T[], output: T[], ptr: Pointer, diff: Diff 
   const output_length = (isNaN(output.length) || output.length <= 0) ? 0 : output.length
   const array_operations = dist(input_length, output_length).operations
   const [padded_operations] = array_operations.reduce<[Operation[], number]>(([operations, padding], array_operation) => {
+    isTimedOut(timeout, startTimestamp)
     if (isArrayAdd(array_operation)) {
       const padded_index = array_operation.index + 1 + padding
       const index_token = padded_index < (input_length + padding) ? String(padded_index) : '-'
@@ -270,26 +287,29 @@ export function diffArrays<T>(input: T[], output: T[], ptr: Pointer, diff: Diff 
     }
     else { // replace
       const replace_ptr = ptr.add(String(array_operation.index + padding))
-      const replace_operations = diff(array_operation.original, array_operation.value, replace_ptr)
+      const replace_operations = diff(array_operation.original, array_operation.value, replace_ptr, timeout, startTimestamp)
       return [operations.concat(...replace_operations), padding]
     }
   }, [[], 0])
   return padded_operations
 }
 
-export function diffObjects(input: any, output: any, ptr: Pointer, diff: Diff = diffAny): Operation[] {
+export function diffObjects(input: any, output: any, ptr: Pointer, diff: Diff = diffAny, timeout: number = 0, startTimestamp: Moment = moment()): Operation[] {
   // if a key is in input but not output -> remove it
   const operations: Operation[] = []
   subtract(input, output).forEach(key => {
+    isTimedOut(timeout, startTimestamp)
     operations.push({op: 'remove', path: ptr.add(key).toString()})
   })
   // if a key is in output but not input -> add it
   subtract(output, input).forEach(key => {
+    isTimedOut(timeout, startTimestamp)
     operations.push({op: 'add', path: ptr.add(key).toString(), value: output[key]})
   })
   // if a key is in both, diff it recursively
   intersection([input, output]).forEach(key => {
-    operations.push(...diff(input[key], output[key], ptr.add(key)))
+    isTimedOut(timeout, startTimestamp)
+    operations.push(...diff(input[key], output[key], ptr.add(key), timeout, startTimestamp))
   })
   return operations
 }
@@ -317,7 +337,8 @@ that would transform `input` into `output`.
 > o  literals (false, true, and null): are considered equal if they are
 >    the same.
 */
-export function diffAny(input: any, output: any, ptr: Pointer, diff: Diff = diffAny): Operation[] {
+// czi: implement TIMEOUT to provide escape when recreate takes too long
+export function diffAny(input: any, output: any, ptr: Pointer, timeout: number = 0, startTimestamp: Moment = moment(), diff: Diff = diffAny): Operation[] {
   // strict equality handles literals, numbers, and strings (a sufficient but not necessary cause)
   if (input === output) {
     return []
@@ -325,10 +346,10 @@ export function diffAny(input: any, output: any, ptr: Pointer, diff: Diff = diff
   const input_type = objectType(input)
   const output_type = objectType(output)
   if (input_type == 'array' && output_type == 'array') {
-    return diffArrays(input, output, ptr, diff)
+    return diffArrays(input, output, ptr, diff, timeout, startTimestamp)
   }
   if (input_type == 'object' && output_type == 'object') {
-    return diffObjects(input, output, ptr, diff)
+    return diffObjects(input, output, ptr, diff, timeout, startTimestamp)
   }
   // at this point we know that input and output are materially different;
   // could be array -> object, object -> array, boolean -> undefined,

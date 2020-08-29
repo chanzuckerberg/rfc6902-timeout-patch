@@ -1,7 +1,7 @@
 {
-  "name": "rfc6902",
+  "name": "rfc6902-timeout-patch",
   "version": "4.0.0",
-  "description": "Complete implementation of RFC6902 (patch and diff)",
+  "description": "Patch for rfc6902 to include timeout",
   "keywords": [
     "json",
     "patch",
@@ -9,7 +9,7 @@
     "rfc6902"
   ],
   "homepage": "https://github.com/chbrown/rfc6902",
-  "repository": "github:chbrown/rfc6902",
+  "repository": "github:chanzuckerberg/rfc6902-timeout-patch.git",
   "author": "Christopher Brown <io@henrian.com> (http://henrian.com)",
   "license": "MIT",
   "devDependencies": {
@@ -29,5 +29,8 @@
     "posttest": "nyc report --reporter=text-lcov | coveralls || true",
     "dist": "tsc -t ES2015 -m es2015 && rollup index.js --output.format umd --name rfc6902 --output.file dist/rfc6902.js && closure-compiler dist/rfc6902.js > dist/rfc6902.min.js",
     "clean": "tsc -b . test --clean"
+  },
+  "dependencies": {
+    "moment": "^2.27.0"
   }
 }
