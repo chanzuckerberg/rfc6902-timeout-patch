@@ -1,9 +1,5 @@
-import * as moment from 'moment' // czi: use moment to implement timeout
-
 import {Pointer} from './pointer' // we only need this for type inference
 import {hasOwnProperty, objectType} from './util'
-
-type Moment = moment.Moment
 
 /**
 All diff* functions should return a list of operations, often empty.
@@ -46,19 +42,19 @@ export function isDestructive({op}: Operation): boolean {
   return op === 'remove' || op === 'replace' || op === 'copy' || op === 'move'
 }
 
-export type Diff = (input: any, output: any, ptr: Pointer, timeout: number, startTimestamp: Moment) => Operation[]
+export type Diff = (input: any, output: any, ptr: Pointer, timeout: number, startTimestamp: number) => Operation[]
 /**
 VoidableDiff exists to allow the user to provide a partial diff(...) function,
 falling back to the built-in diffAny(...) function if the user-provided function
 returns void.
 */
-export type VoidableDiff = (input: any, output: any, ptr: Pointer, timeout: number, startTimestamp: Moment) => Operation[] | void
+export type VoidableDiff = (input: any, output: any, ptr: Pointer, timeout: number, startTimestamp: number) => Operation[] | void
 
 // czi: if timed out throw error
-function isTimedOut(timeout: number, startTimestamp: Moment) {
+function isTimedOut(timeout: number, startTimestamp: number) {
   if (
     timeout &&
-    moment().diff(startTimestamp) >= timeout
+    Date.now() - startTimestamp >= timeout
   ) {
     throw new Error('Diff timed out!')
   }
@@ -186,7 +182,7 @@ resulting in an array of 'remove' operations.
 
 @returns A list of add/remove/replace operations.
 */
-export function diffArrays<T>(input: T[], output: T[], ptr: Pointer, diff: Diff = diffAny, timeout: number = 0, startTimestamp: Moment = moment()): Operation[] {
+export function diffArrays<T>(input: T[], output: T[], ptr: Pointer, diff: Diff = diffAny, timeout: number = 0, startTimestamp: number = Date.now()): Operation[] {
   // set up cost matrix (very simple initialization: just a map)
   const memo: {[index: string]: DynamicAlternative} = {
     '0,0': {operations: [], cost: 0},
@@ -294,7 +290,7 @@ export function diffArrays<T>(input: T[], output: T[], ptr: Pointer, diff: Diff 
   return padded_operations
 }
 
-export function diffObjects(input: any, output: any, ptr: Pointer, diff: Diff = diffAny, timeout: number = 0, startTimestamp: Moment = moment()): Operation[] {
+export function diffObjects(input: any, output: any, ptr: Pointer, diff: Diff = diffAny, timeout: number = 0, startTimestamp: number = Date.now()): Operation[] {
   // if a key is in input but not output -> remove it
   const operations: Operation[] = []
   subtract(input, output).forEach(key => {
@@ -338,7 +334,7 @@ that would transform `input` into `output`.
 >    the same.
 */
 // czi: implement TIMEOUT to provide escape when recreate takes too long
-export function diffAny(input: any, output: any, ptr: Pointer, timeout: number = 0, startTimestamp: Moment = moment(), diff: Diff = diffAny): Operation[] {
+export function diffAny(input: any, output: any, ptr: Pointer, timeout: number = 0, startTimestamp: number = Date.now(), diff: Diff = diffAny): Operation[] {
   // strict equality handles literals, numbers, and strings (a sufficient but not necessary cause)
   if (input === output) {
     return []
